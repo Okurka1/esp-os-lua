@@ -1,0 +1,16 @@
+{
+  "name": "lua54",
+  "version": "5.4.6",
+  "description": "Lua 5.4.6 interpreter for ESP-OS",
+  "build": {
+    "includeDir": "src",
+    "srcFilter": [
+      "+<*.c>",
+      "-<lua.c>",
+      "-<luac.c>"
+    ],
+    "flags": [
+      "-DLUA_USE_C89"
+    ]
+  }
+}

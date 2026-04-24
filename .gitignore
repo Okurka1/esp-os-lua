@@ -1,0 +1,7 @@
+.pio/
+.vscode/
+*.o
+*.bin
+*.log
+Uploads/
+.abacus.donotdelete
