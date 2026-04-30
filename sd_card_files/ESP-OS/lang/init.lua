@@ -31,6 +31,35 @@ function lang.current()
   return current_lang
 end
 
+local function load_user_config()
+  local ok, cfg = pcall(dofile, "/ESP-OS/config/user.lua")
+  if ok and type(cfg) == "table" then
+    return cfg
+  end
+  return {
+    language = "cs",
+    auto_reconnect = true,
+    use_colors = false,
+  }
+end
+
+local function save_user_config(cfg)
+  local file_content = string.format([[user = {
+  language = %q,
+  auto_reconnect = %s,
+  use_colors = %s,
+}
+
+return user
+]],
+    tostring(cfg.language or "cs"),
+    tostring(cfg.auto_reconnect == true),
+    tostring(cfg.use_colors == true)
+  )
+
+  return sd.write("/ESP-OS/config/user.lua", file_content)
+end
+
 function lang.switch(new_lang)
   if new_lang ~= "cs" and new_lang ~= "en" then
     return false
@@ -39,30 +68,17 @@ function lang.switch(new_lang)
   current_lang = new_lang
   lang.load(current_lang)
 
-  local ok_cfg, config_or_err = pcall(dofile, "/ESP-OS/config/system.lua")
-  if not ok_cfg or type(config_or_err) ~= "table" then
-    serial.print("[ERROR] Failed to load system config for language save\n")
-    return false
-  end
+  local user_cfg = load_user_config()
+  user_cfg.language = new_lang
 
-  config_or_err.language = new_lang
-
-  local file_content = "config = {\n"
-  for k, v in pairs(config_or_err) do
-    if type(v) == "string" then
-      file_content = file_content .. "  " .. k .. ' = "' .. v .. '",\n'
-    elseif type(v) == "boolean" then
-      file_content = file_content .. "  " .. k .. " = " .. tostring(v) .. ",\n"
-    else
-      file_content = file_content .. "  " .. k .. " = " .. tostring(v) .. ",\n"
+  local ok_write = save_user_config(user_cfg)
+  if ok_write then
+    package.loaded["config.user"] = nil
+    if _G.config and type(_G.config) == "table" then
+      _G.config.language = new_lang
     end
   end
-  file_content = file_content .. "}\nreturn config\n"
 
-  local ok_write = sd.write("/ESP-OS/config/system.lua", file_content)
-  if ok_write then
-    config = config_or_err
-  end
   return ok_write and true or false
 end
 

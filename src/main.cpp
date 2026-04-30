@@ -115,6 +115,24 @@ bool initLua() {
   }
 
   luaL_openlibs(g_luaState);
+
+  Serial.println(F("[LUA] Nastavuji package.path pro SD kartu..."));
+  const char* luaSetupPath = R"(
+    package.path = '/ESP-OS/?.lua;' ..
+                   '/ESP-OS/?/init.lua;' ..
+                   '/ESP-OS/system/?.lua;' ..
+                   '/ESP-OS/lang/?.lua;' ..
+                   package.path
+  )";
+
+  if (luaL_dostring(g_luaState, luaSetupPath) != LUA_OK) {
+    const char* err = lua_tostring(g_luaState, -1);
+    Serial.printf("[LUA][ERROR] Package.path setup failed: %s\n", err ? err : "unknown");
+    lua_pop(g_luaState, 1);
+  } else {
+    Serial.println(F("[LUA] Package.path nastaven."));
+  }
+
   registerLuaModules(g_luaState);
 
   Serial.println(F("[LUA] Lua VM inicializována."));

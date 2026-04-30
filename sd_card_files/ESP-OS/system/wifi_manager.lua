@@ -1,5 +1,6 @@
 -- WiFi manager module
 local wifi_manager = {}
+local colors = sd_require("system.colors")
 
 local CONFIG_PATH = "/ESP-OS/config/wifi.lua"
 
@@ -8,6 +9,11 @@ wifi_manager.last_scan = {}
 
 local function trim(value)
   return tostring(value or ""):match("^%s*(.-)%s*$")
+end
+
+local function wait_back()
+  serial.print(lang["sysinfo_press_key"] .. "\n")
+  serial.readKey()
 end
 
 local function default_config()
@@ -35,7 +41,7 @@ end
 
 function wifi_manager.load_config()
   if not sd.available() then
-    serial.print("[WiFi][ERROR] " .. lang["error_sd_not_connected"] .. "\n")
+    serial.print("[WiFi][" .. lang["error"] .. "] " .. lang["error_sd_not_connected"] .. "\n")
     wifi_manager.config = default_config()
     return wifi_manager.config
   end
@@ -64,7 +70,7 @@ end
 
 function wifi_manager.save_config()
   if not sd.available() then
-    serial.print("[WiFi][ERROR] " .. lang["error_sd_not_connected"] .. "\n")
+    serial.print("[WiFi][" .. lang["error"] .. "] " .. lang["error_sd_not_connected"] .. "\n")
     return false
   end
 
@@ -130,40 +136,42 @@ end
 
 local function connect_to_network(ssid, password, is_open)
   if trim(ssid) == "" then
-    ui.box({"[ERROR] " .. lang["wifi_enter_ssid"]})
+    ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_failed"]})
     return false
   end
 
   if not is_open and #tostring(password or "") < 8 then
-    ui.box({"[ERROR] " .. lang["wifi_password_min"]})
+    ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_password_min"]})
     return false
   end
 
   ui.box({lang["wifi_connecting"] .. " " .. ssid .. "..."})
   local ok = wifi.connect(ssid, password or "")
   if ok then
-    ui.box({lang["wifi_connected"], lang["wifi_info_ip"] .. ": " .. (wifi.ip() or "N/A")})
+    print(colors.success(lang["wifi_connected"]))
+    ui.box({lang["wifi_connected"], lang["wifi_ip"] .. " " .. (wifi.ip() or "N/A")})
     return true
   end
 
-  ui.box({"[ERROR] " .. lang["wifi_failed"]})
+  print(colors.error("[" .. lang["error"] .. "] " .. lang["wifi_failed"]))
+  ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_failed"]})
   return false
 end
 
 local function scan_networks()
   ui.header(lang["wifi_scan"])
-  serial.print(lang["wifi_scanning"] .. "\n")
+  print(colors.info(lang["wifi_scanning"]))
 
   local networks = wifi.scan() or {}
   wifi_manager.last_scan = networks
 
   if #networks == 0 then
     ui.box({lang["wifi_no_networks"]})
-    serial.print(lang["press_key"] .. "...\n")
-    serial.readKey()
+    wait_back()
     return
   end
 
+  serial.print(lang["wifi_found"] .. " " .. tostring(#networks) .. " " .. lang["wifi_networks"] .. "\n")
   for i, net in ipairs(networks) do
     local ssid = trim(net.ssid)
     if ssid == "" then ssid = "<hidden>" end
@@ -172,7 +180,7 @@ local function scan_networks()
     serial.print(string.format("[%d] %s | %d dBm (%d%%)\n", i, ssid, rssi, percent))
   end
 
-  local choice = ui.prompt(lang["wifi_select_network"])
+  local choice = ui.prompt(lang["wifi_select"] .. tostring(#networks) .. "]: ")
   local idx = tonumber(trim(choice))
   if not idx or not networks[idx] then
     return
@@ -182,7 +190,8 @@ local function scan_networks()
   local ssid = trim(selected.ssid)
   local password = ""
   if tonumber(selected.encryption) ~= 0 then
-    serial.print(lang["wifi_enter_password"] .. ": ")
+    serial.print(lang["wifi_enter_pass"] .. " " .. ssid .. "\n")
+    serial.print(lang["wifi_password"] .. " ")
     password = serial.readPassword() or ""
   end
 
@@ -190,26 +199,25 @@ local function scan_networks()
     wifi_manager.save_network(ssid, password)
   end
 
-  serial.print(lang["press_key"] .. "...\n")
-  serial.readKey()
+  wait_back()
 end
 
 local function connect_manual()
   ui.header(lang["wifi_connect"])
-  local ssid = trim(ui.prompt(lang["wifi_enter_ssid"] .. ": "))
+  local ssid = trim(ui.prompt(lang["wifi_ssid"] .. " "))
   if ssid == "" then
-    ui.box({"[ERROR] " .. lang["wifi_enter_ssid"]})
+    ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_failed"]})
     return
   end
 
-  serial.print(lang["wifi_enter_password"] .. ": ")
+  serial.print(lang["wifi_enter_pass"] .. " " .. ssid .. "\n")
+  serial.print(lang["wifi_password"] .. " ")
   local password = serial.readPassword() or ""
   if connect_to_network(ssid, password, false) then
     wifi_manager.save_network(ssid, password)
   end
 
-  serial.print(lang["press_key"] .. "...\n")
-  serial.readKey()
+  wait_back()
 end
 
 local function disconnect_network()
@@ -217,24 +225,23 @@ local function disconnect_network()
   if ok then
     ui.box({lang["wifi_disconnected"]})
   else
-    ui.box({"[ERROR] " .. lang["wifi_failed"]})
+    ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_failed"]})
   end
-  serial.print(lang["press_key"] .. "...\n")
-  serial.readKey()
+  wait_back()
 end
 
 local function start_ap_mode()
   local cfg = wifi_manager.load_config()
   ui.header(lang["wifi_ap_mode"])
 
-  local ssid = trim(ui.prompt("SSID [" .. cfg.ap_mode.ssid .. "]: "))
+  local ssid = trim(ui.prompt(lang["wifi_ap_ssid"] .. " [" .. cfg.ap_mode.ssid .. "]: "))
   if ssid == "" then ssid = cfg.ap_mode.ssid end
 
-  local password = trim(ui.prompt(lang["wifi_enter_password"] .. " [" .. cfg.ap_mode.password .. "]: "))
+  local password = trim(ui.prompt(lang["wifi_ap_pass"] .. " [" .. cfg.ap_mode.password .. "]: "))
   if password == "" then password = cfg.ap_mode.password end
 
   if #password < 8 then
-    ui.box({"[ERROR] " .. lang["wifi_password_min"]})
+    ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_password_min"]})
     return
   end
 
@@ -244,13 +251,12 @@ local function start_ap_mode()
     cfg.ap_mode.password = password
     wifi_manager.config = cfg
     wifi_manager.save_config()
-    ui.box({"AP OK", lang["wifi_info_ip"] .. ": " .. (wifi.ip() or "192.168.4.1")})
+    ui.box({lang["wifi_ap_started"], lang["wifi_ap_ip"] .. " " .. (wifi.ip() or "192.168.4.1")})
   else
-    ui.box({"[ERROR] AP failed"})
+    ui.box({"[" .. lang["error"] .. "] " .. lang["wifi_failed"]})
   end
 
-  serial.print(lang["press_key"] .. "...\n")
-  serial.readKey()
+  wait_back()
 end
 
 local function show_saved_networks()
@@ -258,20 +264,19 @@ local function show_saved_networks()
   local networks = cfg.saved_networks or {}
   sort_networks_by_priority(networks)
 
-  ui.header(lang["wifi_saved"])
+  ui.header(lang["wifi_saved_networks"])
   if #networks == 0 then
-    ui.box({lang["wifi_saved_list"], "-"})
-    serial.print(lang["press_key"] .. "...\n")
-    serial.readKey()
+    ui.box({lang["wifi_saved_networks"], "-"})
+    wait_back()
     return
   end
 
-  serial.print(lang["wifi_saved_list"] .. "\n")
+  serial.print(lang["wifi_saved_networks"] .. "\n")
   for i, net in ipairs(networks) do
     serial.print(string.format("[%d] %s\n", i, net.ssid or "?"))
   end
 
-  serial.print("[P] Connect [S] Delete [B] " .. lang["back"] .. ": ")
+  serial.print("[P] Connect [S] Delete [B] " .. lang["wifi_back"] .. ": ")
   local action = string.lower(tostring(serial.readKey() or ""))
   if action == "b" then
     return
@@ -296,8 +301,7 @@ local function show_saved_networks()
     end
   end
 
-  serial.print(lang["press_key"] .. "...\n")
-  serial.readKey()
+  wait_back()
 end
 
 local function toggle_auto_reconnect()
@@ -305,38 +309,38 @@ local function toggle_auto_reconnect()
   cfg.auto_reconnect = not cfg.auto_reconnect
   wifi_manager.config = cfg
   wifi_manager.save_config()
-  ui.box({lang["wifi_auto_reconnect"] .. ": " .. tostring(cfg.auto_reconnect)})
-  serial.print(lang["press_key"] .. "...\n")
-  serial.readKey()
+  local state = cfg.auto_reconnect and lang["enabled"] or lang["disabled"]
+  ui.box({lang["wifi_autoreconnect"] .. ": " .. state})
+  wait_back()
 end
 
 function wifi_manager.show_info()
   print("\n╔════════════════════════════════════════╗")
-  print("║  " .. lang["wifi_info"] .. "                    ║")
+  print("║           " .. lang["wifi_info"] .. "             ║")
   print("╚════════════════════════════════════════╝")
 
   local status = wifi.status()
   if status == "CONNECTED" or status == 3 then
-    print("\n" .. lang["wifi_info_status"] .. ": " .. lang["wifi_connected"])
-    print(lang["wifi_info_ssid"] .. ": " .. (wifi.ssid() or "N/A"))
-    print(lang["wifi_info_ip"] .. ": " .. (wifi.ip() or "N/A"))
-    print(lang["wifi_info_gateway"] .. ": " .. (wifi.gateway() or "N/A"))
-    print(lang["wifi_info_dns"] .. ": " .. (wifi.dns() or "N/A"))
-    print(lang["wifi_info_mac"] .. ": " .. (wifi.mac() or "N/A"))
-    print(lang["wifi_info_channel"] .. ": " .. tostring(wifi.channel() or "N/A"))
-    print(lang["wifi_info_phy_mode"] .. ": " .. (wifi.phyMode() or "N/A"))
+    print("\n" .. lang["wifi_status"] .. " " .. lang["wifi_connected"])
+    print(lang["wifi_ssid"] .. " " .. (wifi.ssid() or "N/A"))
+    print(lang["wifi_ip"] .. " " .. (wifi.ip() or "N/A"))
+    print(lang["wifi_gateway"] .. " " .. (wifi.gateway() or "N/A"))
+    print(lang["wifi_dns"] .. " " .. (wifi.dns() or "N/A"))
+    print(lang["wifi_mac"] .. " " .. (wifi.mac() or "N/A"))
+    print(lang["wifi_channel"] .. " " .. tostring(wifi.channel() or "N/A"))
+    print(lang["wifi_speed"] .. " " .. (wifi.phyMode() or "N/A"))
 
     local rssi = wifi.rssi()
     if rssi then
       local percent = math.min(100, math.max(0, (rssi + 100) * 2))
-      print(string.format("%s: %d dBm (%.0f%%)", lang["wifi_info_rssi"], rssi, percent))
+      print(string.format("%s %d dBm (%.0f%%)", lang["wifi_signal"], rssi, percent))
     end
   else
-    print("\n" .. lang["wifi_info_status"] .. ": " .. lang["wifi_disconnected"])
+    print("\n" .. lang["wifi_not_connected"])
+    print(lang["wifi_status"] .. " " .. tostring(status or "N/A"))
   end
 
-  print("\n" .. lang["press_key_back"] .. "...")
-  serial.readKey()
+  wait_back()
 end
 
 function wifi_manager.auto_connect()
@@ -363,10 +367,10 @@ function wifi_manager.show()
       "[2] " .. lang["wifi_connect"],
       "[3] " .. lang["wifi_disconnect"],
       "[4] " .. lang["wifi_ap_mode"],
-      "[5] " .. lang["wifi_saved"],
-      "[6] " .. lang["wifi_auto_reconnect"] .. ": " .. tostring(cfg.auto_reconnect),
+      "[5] " .. lang["wifi_saved_networks"],
+      "[6] " .. lang["wifi_autoreconnect"] .. ": " .. tostring(cfg.auto_reconnect),
       "[7] " .. lang["wifi_info"],
-      "[B] " .. lang["back"]
+      "[B] " .. lang["wifi_back"]
     })
 
     serial.print(lang["menu_select"] .. " [1-7/B]: ")
@@ -389,7 +393,7 @@ function wifi_manager.show()
     elseif choice == "b" then
       break
     else
-      ui.box({"[ERROR] " .. lang["error_invalid_choice"]})
+      ui.box({"[" .. lang["error"] .. "] " .. lang["error_invalid_choice"]})
       system.delay(900)
     end
   end

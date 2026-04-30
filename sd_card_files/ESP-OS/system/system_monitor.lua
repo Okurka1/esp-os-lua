@@ -1,24 +1,24 @@
 -- System monitor module
 local system_monitor = {}
+local colors = sd_require("system.colors")
 
-local function fmt_bytes(bytes)
+local function format_size(bytes)
   if bytes == nil then
     return "N/A"
   end
 
-  local units = {"B", "KB", "MB", "GB"}
-  local idx = 1
-  local value = tonumber(bytes) or 0
-
-  while value >= 1024 and idx < #units do
-    value = value / 1024
-    idx = idx + 1
+  if bytes < 1024 then
+    return string.format("%.0f B", bytes)
+  elseif bytes < 1024 * 1024 then
+    return string.format("%.2f KB", bytes / 1024)
+  elseif bytes < 1024 * 1024 * 1024 then
+    return string.format("%.2f MB", bytes / (1024 * 1024))
+  else
+    return string.format("%.2f GB", bytes / (1024 * 1024 * 1024))
   end
-
-  return string.format("%.2f %s", value, units[idx])
 end
 
-function system_monitor.show()
+function system_monitor.show_info()
   local free_heap = system.heap()
   local heap_total = system.heapSize()
   local flash_size = system.flashSize()
@@ -30,30 +30,39 @@ function system_monitor.show()
   end
 
   ui.header(lang["menu_system_info"])
+  print("\n" .. colors.title(lang["sysinfo_title"]))
 
-  if not sd.available() then
-    ui.box({
-      lang["sysinfo_sd_card"] .. ": " .. lang["error_sd_not_connected"],
-      lang["sysinfo_sd_retry"]
-    })
-    serial.print(lang["press_key"] .. "...\n")
-    serial.readKey()
-    return
+  print(string.format("%s: %s", lang["sysinfo_chip"], system.chipModel()))
+  print(string.format("%s: %.2f s", lang["sysinfo_uptime"], uptime_ms / 1000))
+  print(string.format("%s: %s / %s (%.1f%%)",
+    lang["sysinfo_ram"],
+    format_size(heap_total - free_heap),
+    format_size(heap_total),
+    ram_usage))
+  print(string.format("%s: %s", lang["sysinfo_flash"], format_size(flash_size)))
+
+  if sd.available() then
+    local total = sd.totalBytes()
+    local used = sd.usedBytes()
+
+    if total and used and total > 0 then
+      local percent = (used / total) * 100
+      print(string.format("%s: %s / %s (%.1f%%)",
+        lang["sysinfo_sd_card"],
+        colors.CYAN .. format_size(used) .. colors.RESET,
+        colors.CYAN .. format_size(total) .. colors.RESET,
+        percent))
+    else
+      print(lang["sysinfo_sd_card"] .. ": " .. colors.warning("N/A"))
+    end
+  else
+    print(lang["sysinfo_sd_card"] .. ": " .. colors.error(lang["wifi_not_connected"]))
   end
+end
 
-  local sd_total = sd.size()
-  local sd_free = sd.free()
-
-  ui.box({
-    string.format("%s: %s", lang["sysinfo_chip"], system.chipModel()),
-    string.format("%s: %.2f s", lang["sysinfo_uptime"], uptime_ms / 1000),
-    string.format("%s: %s / %s (%.1f%%)", lang["sysinfo_ram"], fmt_bytes(heap_total - free_heap), fmt_bytes(heap_total), ram_usage),
-    string.format("%s: %s", lang["sysinfo_flash"], fmt_bytes(flash_size)),
-    string.format("%s: %s", lang["sysinfo_sd_total"], fmt_bytes(sd_total)),
-    string.format("%s: %s", lang["sysinfo_sd_free"], fmt_bytes(sd_free))
-  })
-
-  serial.print("\n" .. lang["press_key_back"] .. "...\n")
+function system_monitor.show()
+  system_monitor.show_info()
+  serial.print("\n" .. lang["sysinfo_press_key"] .. "\n")
   serial.readKey()
 end
 
