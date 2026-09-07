@@ -1,0 +1,156 @@
+#include "lua_system.h"
+
+#include <Arduino.h>
+#include <esp_sleep.h>
+#include <esp_system.h>
+#include <Preferences.h>
+
+extern "C" {
+#include <lauxlib.h>
+#include <lua.h>
+}
+
+#include "config.h"
+#include "lua_helpers.h"
+
+namespace {
+
+int lua_system_restart(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.restart: cannot acquire mutex");
+  }
+
+  const char* mode = luaL_optstring(L, 1, "normal");
+
+  // Uložení reboot módu do NVS (Preferences)
+  Preferences prefs;
+  prefs.begin("esp-os", false);
+  
+  if (strcmp(mode, "recovery") == 0) {
+    prefs.putUChar("boot_mode", 1);  // 1 = recovery
+    Serial.println(F("[SYSTEM] Restart do Recovery Mode..."));
+  } else if (strcmp(mode, "bootloader") == 0) {
+    prefs.putUChar("boot_mode", 2);  // 2 = bootloader menu
+    Serial.println(F("[SYSTEM] Restart do Bootloader Menu..."));
+  } else {
+    prefs.putUChar("boot_mode", 0);  // 0 = normal
+    Serial.println(F("[SYSTEM] Restart zařízení..."));
+  }
+  
+  prefs.end();
+  delay(100);
+  ESP.restart();
+  return 0;
+}
+
+// Deep sleep - vypnutí zařízení
+int lua_system_shutdown(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.shutdown: nelze získat mutex");
+  }
+
+  // Probuzení BOOT tlačítkem (GPIO0), aktivní LOW
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
+  esp_deep_sleep_start();
+
+  return 0;  // sem by se běžně nemělo dojít
+}
+
+int lua_system_heap(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.heap: nelze získat mutex");
+  }
+
+  lua_pushinteger(L, ESP.getFreeHeap());
+  return 1;
+}
+
+int lua_system_heap_size(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.heapSize: nelze získat mutex");
+  }
+
+  lua_pushinteger(L, ESP.getHeapSize());
+  return 1;
+}
+
+int lua_system_flash_size(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.flashSize: nelze získat mutex");
+  }
+
+  lua_pushinteger(L, ESP.getFlashChipSize());
+  return 1;
+}
+
+int lua_system_chip_model(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.chipModel: nelze získat mutex");
+  }
+
+  lua_pushstring(L, ESP.getChipModel());
+  return 1;
+}
+
+int lua_system_millis(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.millis: nelze získat mutex");
+  }
+
+  lua_pushinteger(L, millis());
+  return 1;
+}
+
+int lua_system_cpu_freq(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.cpuFreq: nelze získat mutex");
+  }
+
+  lua_pushinteger(L, ESP.getCpuFreqMHz());
+  return 1;
+}
+
+int lua_system_delay(lua_State* L) {
+  ScopedLuaLock lock;
+  if (!lock.ok()) {
+    return luaL_error(L, "system.delay: cannot acquire mutex");
+  }
+
+  const uint32_t ms = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+
+  delay(ms);
+  return 0;
+}
+
+}  // namespace
+
+void register_lua_system(lua_State* L) {
+  lua_newtable(L);
+  lua_pushcfunction(L, lua_system_restart);
+  lua_setfield(L, -2, "restart");
+  lua_pushcfunction(L, lua_system_shutdown);
+  lua_setfield(L, -2, "shutdown");
+  lua_pushcfunction(L, lua_system_heap);
+  lua_setfield(L, -2, "heap");
+  lua_pushcfunction(L, lua_system_heap_size);
+  lua_setfield(L, -2, "heapSize");
+  lua_pushcfunction(L, lua_system_flash_size);
+  lua_setfield(L, -2, "flashSize");
+  lua_pushcfunction(L, lua_system_chip_model);
+  lua_setfield(L, -2, "chipModel");
+  lua_pushcfunction(L, lua_system_cpu_freq);
+  lua_setfield(L, -2, "cpuFreq");
+  lua_pushcfunction(L, lua_system_millis);
+  lua_setfield(L, -2, "millis");
+  lua_pushcfunction(L, lua_system_delay);
+  lua_setfield(L, -2, "delay");
+  lua_setglobal(L, "system");
+}
